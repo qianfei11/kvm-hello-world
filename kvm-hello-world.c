@@ -67,21 +67,21 @@
 struct vm {
 	int sys_fd;
 	int fd;
-	char *mem;
-};
+	char *mem; // memory
+}; // virtual machine structure
 
 void vm_init(struct vm *vm, size_t mem_size)
 {
 	int api_ver;
 	struct kvm_userspace_memory_region memreg;
 
-	vm->sys_fd = open("/dev/kvm", O_RDWR);
+	vm->sys_fd = open("/dev/kvm", O_RDWR); // open "/dev/kvm"
 	if (vm->sys_fd < 0) {
 		perror("open /dev/kvm");
 		exit(1);
 	}
 
-	api_ver = ioctl(vm->sys_fd, KVM_GET_API_VERSION, 0);
+	api_ver = ioctl(vm->sys_fd, KVM_GET_API_VERSION, 0); // check version
 	if (api_ver < 0) {
 		perror("KVM_GET_API_VERSION");
 		exit(1);
@@ -93,60 +93,60 @@ void vm_init(struct vm *vm, size_t mem_size)
 		exit(1);
 	}
 
-	vm->fd = ioctl(vm->sys_fd, KVM_CREATE_VM, 0);
+	vm->fd = ioctl(vm->sys_fd, KVM_CREATE_VM, 0); // create a vm
 	if (vm->fd < 0) {
 		perror("KVM_CREATE_VM");
 		exit(1);
 	}
 
-        if (ioctl(vm->fd, KVM_SET_TSS_ADDR, 0xfffbd000) < 0) {
-                perror("KVM_SET_TSS_ADDR");
+    if (ioctl(vm->fd, KVM_SET_TSS_ADDR, 0xfffbd000) < 0) {
+        perror("KVM_SET_TSS_ADDR");
 		exit(1);
 	}
 
 	vm->mem = mmap(NULL, mem_size, PROT_READ | PROT_WRITE,
-		   MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+		   MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0); // use mmap to allocate memory
 	if (vm->mem == MAP_FAILED) {
 		perror("mmap mem");
 		exit(1);
 	}
 
-	madvise(vm->mem, mem_size, MADV_MERGEABLE);
+	madvise(vm->mem, mem_size, MADV_MERGEABLE); // set how to allocate the mapped memory
 
 	memreg.slot = 0;
 	memreg.flags = 0;
 	memreg.guest_phys_addr = 0;
 	memreg.memory_size = mem_size;
 	memreg.userspace_addr = (unsigned long)vm->mem;
-        if (ioctl(vm->fd, KVM_SET_USER_MEMORY_REGION, &memreg) < 0) {
+    if (ioctl(vm->fd, KVM_SET_USER_MEMORY_REGION, &memreg) < 0) { // set userspace memory region
 		perror("KVM_SET_USER_MEMORY_REGION");
-                exit(1);
+        exit(1);
 	}
 }
 
 struct vcpu {
 	int fd;
 	struct kvm_run *kvm_run;
-};
+}; // virtual cpu structure
 
 void vcpu_init(struct vm *vm, struct vcpu *vcpu)
 {
 	int vcpu_mmap_size;
 
-	vcpu->fd = ioctl(vm->fd, KVM_CREATE_VCPU, 0);
-        if (vcpu->fd < 0) {
+	vcpu->fd = ioctl(vm->fd, KVM_CREATE_VCPU, 0); // create a virtual cpu with the vm
+    if (vcpu->fd < 0) {
 		perror("KVM_CREATE_VCPU");
-                exit(1);
+        exit(1);
 	}
 
-	vcpu_mmap_size = ioctl(vm->sys_fd, KVM_GET_VCPU_MMAP_SIZE, 0);
-        if (vcpu_mmap_size <= 0) {
+	vcpu_mmap_size = ioctl(vm->sys_fd, KVM_GET_VCPU_MMAP_SIZE, 0); // get virtual cpu mmap memory size
+    if (vcpu_mmap_size <= 0) {
 		perror("KVM_GET_VCPU_MMAP_SIZE");
-                exit(1);
+        exit(1);
 	}
 
 	vcpu->kvm_run = mmap(NULL, vcpu_mmap_size, PROT_READ | PROT_WRITE,
-			     MAP_SHARED, vcpu->fd, 0);
+			     MAP_SHARED, vcpu->fd, 0); // use mmap to allocate memory
 	if (vcpu->kvm_run == MAP_FAILED) {
 		perror("mmap kvm_run");
 		exit(1);
@@ -155,11 +155,11 @@ void vcpu_init(struct vm *vm, struct vcpu *vcpu)
 
 int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
 {
-	struct kvm_regs regs;
+	struct kvm_regs regs; // initialize registers
 	uint64_t memval = 0;
 
 	for (;;) {
-		if (ioctl(vcpu->fd, KVM_RUN, 0) < 0) {
+		if (ioctl(vcpu->fd, KVM_RUN, 0) < 0) { // execute the cpu
 			perror("KVM_RUN");
 			exit(1);
 		}
@@ -188,7 +188,7 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
 	}
 
  check:
-	if (ioctl(vcpu->fd, KVM_GET_REGS, &regs) < 0) {
+	if (ioctl(vcpu->fd, KVM_GET_REGS, &regs) < 0) { // get registers
 		perror("KVM_GET_REGS");
 		exit(1);
 	}
@@ -198,7 +198,7 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
 		return 0;
 	}
 
-	memcpy(&memval, &vm->mem[0x400], sz);
+	memcpy(&memval, &vm->mem[0x400], sz); // copy a few bytes into the vm memory
 	if (memval != 42) {
 		printf("Wrong result: memory at 0x400 is %lld\n",
 		       (unsigned long long)memval);
@@ -217,7 +217,7 @@ int run_real_mode(struct vm *vm, struct vcpu *vcpu)
 
 	printf("Testing real mode\n");
 
-        if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) { // get registers
 		perror("KVM_GET_SREGS");
 		exit(1);
 	}
@@ -225,7 +225,7 @@ int run_real_mode(struct vm *vm, struct vcpu *vcpu)
 	sregs.cs.selector = 0;
 	sregs.cs.base = 0;
 
-        if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) { // set registers
 		perror("KVM_SET_SREGS");
 		exit(1);
 	}
@@ -235,13 +235,13 @@ int run_real_mode(struct vm *vm, struct vcpu *vcpu)
 	regs.rflags = 2;
 	regs.rip = 0;
 
-	if (ioctl(vcpu->fd, KVM_SET_REGS, &regs) < 0) {
+	if (ioctl(vcpu->fd, KVM_SET_REGS, &regs) < 0) { // set registers
 		perror("KVM_SET_REGS");
 		exit(1);
 	}
 
 	memcpy(vm->mem, guest16, guest16_end-guest16);
-	return run_vm(vm, vcpu, 2);
+	return run_vm(vm, vcpu, 2); // run vm
 }
 
 static void setup_protected_mode(struct kvm_sregs *sregs)
@@ -277,14 +277,14 @@ int run_protected_mode(struct vm *vm, struct vcpu *vcpu)
 
 	printf("Testing protected mode\n");
 
-        if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
 		perror("KVM_GET_SREGS");
 		exit(1);
 	}
 
 	setup_protected_mode(&sregs);
 
-        if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
 		perror("KVM_SET_SREGS");
 		exit(1);
 	}
@@ -326,7 +326,7 @@ int run_paged_32bit_mode(struct vm *vm, struct vcpu *vcpu)
 
 	printf("Testing 32-bit paging\n");
 
-        if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
 		perror("KVM_GET_SREGS");
 		exit(1);
 	}
@@ -334,7 +334,7 @@ int run_paged_32bit_mode(struct vm *vm, struct vcpu *vcpu)
 	setup_protected_mode(&sregs);
 	setup_paged_32bit_mode(vm, &sregs);
 
-        if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
 		perror("KVM_SET_SREGS");
 		exit(1);
 	}
@@ -408,14 +408,14 @@ int run_long_mode(struct vm *vm, struct vcpu *vcpu)
 
 	printf("Testing 64-bit mode\n");
 
-        if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
 		perror("KVM_GET_SREGS");
 		exit(1);
 	}
 
 	setup_long_mode(vm, &sregs);
 
-        if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
 		perror("KVM_SET_SREGS");
 		exit(1);
 	}
@@ -439,15 +439,15 @@ int run_long_mode(struct vm *vm, struct vcpu *vcpu)
 
 int main(int argc, char **argv)
 {
-	struct vm vm;
-	struct vcpu vcpu;
+	struct vm vm; // vm variable
+	struct vcpu vcpu; // cpu variable
 	enum {
-		REAL_MODE,
-		PROTECTED_MODE,
-		PAGED_32BIT_MODE,
-		LONG_MODE,
-	} mode = REAL_MODE;
-	int opt;
+		REAL_MODE, // real mode
+		PROTECTED_MODE, // protected mode
+		PAGED_32BIT_MODE, // paged 32 bit mode
+		LONG_MODE, // long mode
+	} mode = REAL_MODE; // set mode
+	int opt; // get command line options
 
 	while ((opt = getopt(argc, argv, "rspl")) != -1) {
 		switch (opt) {
@@ -474,10 +474,10 @@ int main(int argc, char **argv)
 		}
 	}
 
-	vm_init(&vm, 0x200000);
-	vcpu_init(&vm, &vcpu);
+	vm_init(&vm, 0x200000); // initialize vm
+	vcpu_init(&vm, &vcpu); // initialize cpu 
 
-	switch (mode) {
+	switch (mode) { // choose mode
 	case REAL_MODE:
 		return !run_real_mode(&vm, &vcpu);
 
